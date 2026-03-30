@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { AgentPresencePanel } from "@/components/agent-presence-panel";
 import { CommandCenter } from "@/components/command-center";
 import { AnalyticsObservatory } from "@/components/analytics-observatory";
@@ -12,12 +11,6 @@ import { Header } from "@/components/header";
 import { Sidebar } from "@/components/sidebar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
-
-const fadeIn = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.2 },
-};
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("command");
@@ -33,62 +26,33 @@ export default function Home() {
           onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
 
-        <main className="flex-1 overflow-hidden">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+        <main className="flex-1 overflow-hidden flex flex-col">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
             <div className="border-b border-border/50 px-6 py-2 flex-shrink-0">
-              <TabsList className="glass">
-                <TabsTrigger value="command" className="gap-2">
-                  <span>🎯</span>
-                  <span className="hidden sm:inline">Command</span>
-                </TabsTrigger>
-                <TabsTrigger value="agents" className="gap-2">
-                  <span>🏗️</span>
-                  <span className="hidden sm:inline">Agents</span>
-                </TabsTrigger>
-                <TabsTrigger value="analytics" className="gap-2">
-                  <span>📊</span>
-                  <span className="hidden sm:inline">Analytics</span>
-                </TabsTrigger>
-                <TabsTrigger value="tasks" className="gap-2">
-                  <span>✅</span>
-                  <span className="hidden sm:inline">Tasks</span>
-                </TabsTrigger>
-                <TabsTrigger value="collab" className="gap-2">
-                  <span>💬</span>
-                  <span className="hidden sm:inline">Collab</span>
-                </TabsTrigger>
+              <TabsList>
+                <TabsTrigger value="command">🎯 <span className="hidden sm:inline ml-1">Command</span></TabsTrigger>
+                <TabsTrigger value="agents">🏗️ <span className="hidden sm:inline ml-1">Agents</span></TabsTrigger>
+                <TabsTrigger value="analytics">📊 <span className="hidden sm:inline ml-1">Analytics</span></TabsTrigger>
+                <TabsTrigger value="tasks">✅ <span className="hidden sm:inline ml-1">Tasks</span></TabsTrigger>
+                <TabsTrigger value="collab">💬 <span className="hidden sm:inline ml-1">Collab</span></TabsTrigger>
               </TabsList>
             </div>
 
-            <div className="flex-1 overflow-auto p-6">
-              <TabsContent value="command" className="mt-0">
-                <motion.div {...fadeIn}>
-                  <CommandCenter />
-                </motion.div>
+            <div className="flex-1 overflow-auto">
+              <TabsContent value="command" className="mt-0 p-6">
+                <CommandCenter />
               </TabsContent>
-
-              <TabsContent value="agents" className="mt-0">
-                <motion.div {...fadeIn}>
-                  <AgentPresencePanel />
-                </motion.div>
+              <TabsContent value="agents" className="mt-0 p-6">
+                <AgentPresencePanel />
               </TabsContent>
-
-              <TabsContent value="analytics" className="mt-0">
-                <motion.div {...fadeIn}>
-                  <AnalyticsObservatory />
-                </motion.div>
+              <TabsContent value="analytics" className="mt-0 p-6">
+                <AnalyticsObservatory />
               </TabsContent>
-
-              <TabsContent value="tasks" className="mt-0">
-                <motion.div {...fadeIn}>
-                  <TaskCommand />
-                </motion.div>
+              <TabsContent value="tasks" className="mt-0 p-6">
+                <TaskCommand />
               </TabsContent>
-
-              <TabsContent value="collab" className="mt-0">
-                <motion.div {...fadeIn} className="h-[calc(100vh-180px)]">
-                  <CollaborationHub />
-                </motion.div>
+              <TabsContent value="collab" className="mt-0 p-6 h-[calc(100vh-140px)]">
+                <CollaborationHub />
               </TabsContent>
             </div>
           </Tabs>

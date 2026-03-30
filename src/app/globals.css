@@ -107,11 +107,27 @@
   background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  z-index: 0;
 }
 
 .dark .glass {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Ensure dialogs and modals always sit on top */
+[data-radix-portal],
+[data-radix-dialog-overlay],
+[data-radix-dialog-content] {
+  z-index: 9999 !important;
+  pointer-events: auto !important;
+}
+
+/* Ensure interactive elements are always clickable */
+button, a, input, textarea, select, [role="button"], [role="tab"], [tabindex] {
+  position: relative;
+  z-index: 1;
 }
 
 /* Glow effects */

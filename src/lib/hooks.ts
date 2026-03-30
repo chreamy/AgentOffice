@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface LiveAgent {
   _id: string;
@@ -17,10 +19,6 @@ export interface LiveAgent {
   responseTime: string;
   lastSeen: string;
   workspace: string;
-  workspaceContext?: {
-    recentMemory: string;
-    longTerm: string;
-  };
 }
 
 export interface LiveTask {
@@ -59,56 +57,153 @@ export interface LiveMessage {
   createdAt: string;
 }
 
-export interface AnalyticsSummary {
+export interface DashboardStats {
   totalTasks: number;
   completedTasks: number;
   inProgressTasks: number;
-  totalActivities: number;
   agentsOnline: number;
   totalAgents: number;
 }
 
-// Generic fetcher with polling
-function usePoll<T>(url: string, intervalMs = 5000, transform?: (data: unknown) => T) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// ─── Shared SSE Stream ──────────────────────────────────────────────────────
 
-  const fetch_ = useCallback(async () => {
-    try {
-      const res = await fetch(url);
-      const json = await res.json();
-      setData(transform ? transform(json) : json);
-      setError(null);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
+type StreamCallback = (event: string, data: unknown) => void;
+
+let eventSource: EventSource | null = null;
+let listeners: Set<StreamCallback> = new Set();
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let connectionStatus: "connecting" | "connected" | "disconnected" = "disconnected";
+let statusListeners: Set<(s: typeof connectionStatus) => void> = new Set();
+
+function setStatus(s: typeof connectionStatus) {
+  connectionStatus = s;
+  statusListeners.forEach((fn) => fn(s));
+}
+
+function connectStream() {
+  if (eventSource) return;
+  setStatus("connecting");
+
+  const es = new EventSource("/api/stream");
+  eventSource = es;
+
+  es.addEventListener("connected", () => setStatus("connected"));
+
+  const EVENTS = ["agents", "tasks", "activities", "messages", "stats", "error"];
+  EVENTS.forEach((evt) => {
+    es.addEventListener(evt, (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        listeners.forEach((fn) => fn(evt, data));
+      } catch { /* ignore parse errors */ }
+    });
+  });
+
+  es.onerror = () => {
+    setStatus("disconnected");
+    es.close();
+    eventSource = null;
+    // Reconnect after 3s
+    if (!reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (listeners.size > 0) connectStream();
+      }, 3000);
     }
-  }, [url, transform]);
+  };
+}
+
+function subscribe(cb: StreamCallback): () => void {
+  listeners.add(cb);
+  if (!eventSource) connectStream();
+  return () => {
+    listeners.delete(cb);
+    if (listeners.size === 0 && eventSource) {
+      eventSource.close();
+      eventSource = null;
+      setStatus("disconnected");
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    }
+  };
+}
+
+// ─── Hooks ──────────────────────────────────────────────────────────────────
+
+export function useConnectionStatus() {
+  const [status, setS] = useState<"connecting" | "connected" | "disconnected">(connectionStatus);
+  useEffect(() => {
+    setS(connectionStatus);
+    const fn = (s: typeof connectionStatus) => setS(s);
+    statusListeners.add(fn);
+    // Ensure stream is running if any hook uses this
+    const unsub = subscribe(() => {});
+    return () => {
+      statusListeners.delete(fn);
+      unsub();
+    };
+  }, []);
+  return status;
+}
+
+function useStream<T>(event: string, initial: T): { data: T; loading: boolean } {
+  const [data, setData] = useState<T>(initial);
+  const [loading, setLoading] = useState(true);
+  const gotFirst = useRef(false);
 
   useEffect(() => {
-    fetch_();
-    const interval = setInterval(fetch_, intervalMs);
-    return () => clearInterval(interval);
-  }, [fetch_, intervalMs]);
+    const unsub = subscribe((evt, payload) => {
+      if (evt === event) {
+        setData(payload as T);
+        if (!gotFirst.current) {
+          gotFirst.current = true;
+          setLoading(false);
+        }
+      }
+    });
+    return unsub;
+  }, [event]);
 
-  return { data, loading, error, refetch: fetch_ };
+  return { data, loading };
 }
 
-// ─── Agents ──────────────────────────────────────────────────────────────────
 export function useAgents() {
-  return usePoll<LiveAgent[]>(
-    "/api/agents",
-    8000,
-    (json: unknown) => (json as { agents: LiveAgent[] }).agents || []
-  );
+  return useStream<LiveAgent[]>("agents", []);
 }
 
-// ─── Tasks ───────────────────────────────────────────────────────────────────
-export function useTasks(status?: string) {
-  const url = status && status !== "all" ? `/api/tasks?status=${status}` : "/api/tasks";
-  return usePoll<LiveTask[]>(url, 5000, (json: unknown) => (json as { tasks: LiveTask[] }).tasks || []);
+export function useTasks() {
+  return useStream<LiveTask[]>("tasks", []);
+}
+
+export function useActivity() {
+  return useStream<LiveActivity[]>("activities", []);
+}
+
+export function useMessages() {
+  return useStream<LiveMessage[]>("messages", []);
+}
+
+export function useStats() {
+  return useStream<DashboardStats>("stats", {
+    totalTasks: 0,
+    completedTasks: 0,
+    inProgressTasks: 0,
+    agentsOnline: 0,
+    totalAgents: 0,
+  });
+}
+
+// ─── Mutations (still REST) ─────────────────────────────────────────────────
+
+export async function updateAgentStatus(agentId: string, data: Partial<LiveAgent>) {
+  const res = await fetch("/api/agents", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agentId, ...data }),
+  });
+  return res.json();
 }
 
 export async function createTask(data: Partial<LiveTask>) {
@@ -134,15 +229,6 @@ export async function deleteTask(id: string) {
   return res.json();
 }
 
-// ─── Activity ─────────────────────────────────────────────────────────────────
-export function useActivity(limit = 50) {
-  return usePoll<LiveActivity[]>(
-    `/api/activity?limit=${limit}`,
-    4000,
-    (json: unknown) => (json as { activities: LiveActivity[] }).activities || []
-  );
-}
-
 export async function postActivity(data: Partial<LiveActivity>) {
   const res = await fetch("/api/activity", {
     method: "POST",
@@ -152,39 +238,11 @@ export async function postActivity(data: Partial<LiveActivity>) {
   return res.json();
 }
 
-// ─── Messages ────────────────────────────────────────────────────────────────
-export function useMessages(channel = "general") {
-  return usePoll<LiveMessage[]>(
-    `/api/messages?channel=${channel}`,
-    3000,
-    (json: unknown) => (json as { messages: LiveMessage[] }).messages || []
-  );
-}
-
 export async function sendMessage(data: Partial<LiveMessage>) {
   const res = await fetch("/api/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
-  });
-  return res.json();
-}
-
-// ─── Analytics ───────────────────────────────────────────────────────────────
-export function useAnalytics(range = "7d") {
-  return usePoll<{ summary: AnalyticsSummary; dailyData: unknown[]; agents: LiveAgent[] }>(
-    `/api/analytics?range=${range}`,
-    10000,
-    (json: unknown) => json as { summary: AnalyticsSummary; dailyData: unknown[]; agents: LiveAgent[] }
-  );
-}
-
-// ─── Update Agent Status ─────────────────────────────────────────────────────
-export async function updateAgentStatus(agentId: string, data: Partial<LiveAgent>) {
-  const res = await fetch("/api/agents", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ agentId, ...data }),
   });
   return res.json();
 }

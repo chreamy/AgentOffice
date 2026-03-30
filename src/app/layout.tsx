@@ -1,34 +1,11 @@
-import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata } from "next";
 import "./globals.css";
-import { ThemeProvider } from "@/components/theme-provider";
-import { TooltipProvider } from "@/components/ui/tooltip";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { Nav } from "./nav";
 
 export const metadata: Metadata = {
-  title: "Agent Office | AI Collaboration Hub",
-  description: "A sophisticated command center for AI agent collaboration and analytics",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Agent Office",
-  },
-};
-
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  title: "OpenClaw Dashboard | Agent Activity Tracker",
+  description:
+    "Real-time OpenClaw agent activity dashboard with WebSocket streaming",
 };
 
 export default function RootLayout({
@@ -37,18 +14,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <TooltipProvider>{children}</TooltipProvider>
-        </ThemeProvider>
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+      </head>
+      <body className="antialiased bg-[#0a0e1a] text-gray-100 min-h-screen flex flex-col font-[system-ui,-apple-system,sans-serif]">
+        <Nav />
+        <main className="flex-1 overflow-auto pb-20 sm:pb-6">{children}</main>
       </body>
     </html>
   );

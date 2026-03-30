@@ -1,4 +1,6 @@
-import mongoose, { Schema, model, models } from "mongoose";
+import mongoose from "mongoose";
+
+const { Schema, model, models } = mongoose;
 
 // ─── Agent Status ───────────────────────────────────────────────────────────
 const AgentStatusSchema = new Schema(
@@ -19,7 +21,7 @@ const AgentStatusSchema = new Schema(
     tasksCompleted: { type: Number, default: 0 },
     responseTime: { type: String, default: "0s" },
     lastSeen: { type: Date, default: Date.now },
-    workspace: { type: String, default: "" }, // path to workspace
+    workspace: { type: String, default: "" },
   },
   { timestamps: true }
 );
@@ -49,7 +51,7 @@ const TaskSchema = new Schema(
   { timestamps: true }
 );
 
-// ─── Activity Events ─────────────────────────────────────────────────────────
+// ─── Activity Events ────────────────────────────────────────────────────────
 const ActivitySchema = new Schema(
   {
     type: {
@@ -67,7 +69,7 @@ const ActivitySchema = new Schema(
   { timestamps: true }
 );
 
-// ─── Messages ────────────────────────────────────────────────────────────────
+// ─── Messages ───────────────────────────────────────────────────────────────
 const MessageSchema = new Schema(
   {
     sender: { type: String, required: true },
@@ -76,19 +78,15 @@ const MessageSchema = new Schema(
     content: { type: String, required: true },
     channel: { type: String, default: "general" },
     type: { type: String, enum: ["text", "file", "task"], default: "text" },
-    fileInfo: {
-      name: String,
-      size: String,
-      url: String,
-    },
+    fileInfo: { name: String, size: String, url: String },
   },
   { timestamps: true }
 );
 
-// ─── Analytics Snapshots ─────────────────────────────────────────────────────
+// ─── Analytics Snapshots ────────────────────────────────────────────────────
 const AnalyticsSchema = new Schema(
   {
-    date: { type: String, required: true }, // YYYY-MM-DD
+    date: { type: String, required: true },
     tasksCompleted: { type: Number, default: 0 },
     tasksInProgress: { type: Number, default: 0 },
     tasksFailed: { type: Number, default: 0 },
@@ -107,7 +105,7 @@ const AnalyticsSchema = new Schema(
   { timestamps: true }
 );
 
-// ─── Memory Notes ─────────────────────────────────────────────────────────────
+// ─── Memory Notes ───────────────────────────────────────────────────────────
 const MemorySchema = new Schema(
   {
     agentId: { type: String, required: true },
@@ -119,9 +117,11 @@ const MemorySchema = new Schema(
   { timestamps: true }
 );
 
-export const AgentStatus = models.AgentStatus || model("AgentStatus", AgentStatusSchema);
+export const AgentStatus =
+  models.AgentStatus || model("AgentStatus", AgentStatusSchema);
 export const Task = models.Task || model("Task", TaskSchema);
 export const Activity = models.Activity || model("Activity", ActivitySchema);
 export const Message = models.Message || model("Message", MessageSchema);
-export const Analytics = models.Analytics || model("Analytics", AnalyticsSchema);
+export const Analytics =
+  models.Analytics || model("Analytics", AnalyticsSchema);
 export const Memory = models.Memory || model("Memory", MemorySchema);

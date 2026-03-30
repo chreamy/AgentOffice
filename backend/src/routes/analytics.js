@@ -1,60 +1,52 @@
-export const dynamic = "force-dynamic";
+import { Router } from "express";
+import { Task, Activity, AgentStatus } from "../models.js";
 
-import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
-import { Analytics, Task, Activity, AgentStatus } from "@/lib/models";
+const router = Router();
 
-export async function GET(req: Request) {
+router.get("/", async (req, res) => {
   try {
-    await connectDB();
-    const { searchParams } = new URL(req.url);
-    const range = searchParams.get("range") || "7d";
-
+    const range = req.query.range || "7d";
     const days = range === "30d" ? 30 : range === "14d" ? 14 : 7;
     const since = new Date(Date.now() - days * 86400000);
 
-    // Live stats
-    const [
-      totalTasks,
-      completedTasks,
-      inProgressTasks,
-      totalActivities,
-      agents,
-    ] = await Promise.all([
-      Task.countDocuments(),
-      Task.countDocuments({ status: "done" }),
-      Task.countDocuments({ status: "in-progress" }),
-      Activity.countDocuments(),
-      AgentStatus.find({}),
-    ]);
+    const [totalTasks, completedTasks, inProgressTasks, totalActivities, agents] =
+      await Promise.all([
+        Task.countDocuments(),
+        Task.countDocuments({ status: "done" }),
+        Task.countDocuments({ status: "in-progress" }),
+        Activity.countDocuments(),
+        AgentStatus.find({}),
+      ]);
 
-    // Daily breakdown for charts
     const dailyData = await Task.aggregate([
       { $match: { createdAt: { $gte: since } } },
       {
         $group: {
           _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
           completed: { $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] } },
-          inProgress: { $sum: { $cond: [{ $eq: ["$status", "in-progress"] }, 1, 0] } },
+          inProgress: {
+            $sum: { $cond: [{ $eq: ["$status", "in-progress"] }, 1, 0] },
+          },
           failed: { $sum: { $cond: [{ $eq: ["$status", "review"] }, 1, 0] } },
         },
       },
       { $sort: { _id: 1 } },
     ]);
 
-    // Per-agent stats
     const agentTaskStats = await Task.aggregate([
       { $match: { assigneeId: { $exists: true, $ne: "" } } },
       {
         $group: {
           _id: "$assigneeId",
-          tasksCompleted: { $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] } },
+          tasksCompleted: {
+            $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] },
+          },
           totalTasks: { $sum: 1 },
         },
       },
     ]);
 
-    return NextResponse.json({
+    res.json({
       success: true,
       summary: {
         totalTasks,
@@ -73,6 +65,8 @@ export async function GET(req: Request) {
       agents: agents.map((a) => a.toObject()),
     });
   } catch (err) {
-    return NextResponse.json({ success: false, error: String(err) }, { status: 500 });
+    res.status(500).json({ success: false, error: String(err) });
   }
-}
+});
+
+export default router;

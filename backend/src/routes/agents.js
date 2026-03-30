@@ -1,12 +1,10 @@
-export const dynamic = "force-dynamic";
-
-import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
-import { AgentStatus } from "@/lib/models";
+import { Router } from "express";
+import { AgentStatus } from "../models.js";
 import fs from "fs";
 import path from "path";
 
-// Seed agents if they don't exist
+const router = Router();
+
 const DEFAULT_AGENTS = [
   {
     agentId: "kiyo",
@@ -60,13 +58,13 @@ const DEFAULT_AGENTS = [
   },
 ];
 
-function getWorkspaceContext(workspacePath: string) {
+function getWorkspaceContext(workspacePath) {
   if (!workspacePath) return null;
   try {
     const memoryDir = path.join(workspacePath, "memory");
     const today = new Date().toISOString().slice(0, 10);
     const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    
+
     let recentMemory = "";
     for (const date of [today, yesterday]) {
       const filePath = path.join(memoryDir, `${date}.md`);
@@ -75,8 +73,7 @@ function getWorkspaceContext(workspacePath: string) {
         break;
       }
     }
-    
-    // Check MEMORY.md for long-term
+
     const memoryMd = path.join(workspacePath, "MEMORY.md");
     const longTerm = fs.existsSync(memoryMd)
       ? fs.readFileSync(memoryMd, "utf8").slice(0, 500)
@@ -88,52 +85,44 @@ function getWorkspaceContext(workspacePath: string) {
   }
 }
 
-export async function GET() {
+router.get("/", async (_req, res) => {
   try {
-    await connectDB();
-    
-    // Seed if empty
     const count = await AgentStatus.countDocuments();
     if (count === 0) {
       await AgentStatus.insertMany(DEFAULT_AGENTS);
     }
-    
-    const agents = await AgentStatus.find({}).sort({ agentId: 1 });
-    
-    // Enrich with workspace context
-    const enriched = agents.map((a) => {
-      const ctx = getWorkspaceContext(a.workspace);
-      return {
-        ...a.toObject(),
-        workspaceContext: ctx,
-      };
-    });
-    
-    return NextResponse.json({ success: true, agents: enriched });
-  } catch (err) {
-    console.error(err);
-    return NextResponse.json({ success: false, error: String(err) }, { status: 500 });
-  }
-}
 
-export async function PATCH(req: Request) {
+    const agents = await AgentStatus.find({}).sort({ agentId: 1 });
+
+    const enriched = agents.map((a) => ({
+      ...a.toObject(),
+      workspaceContext: getWorkspaceContext(a.workspace),
+    }));
+
+    res.json({ success: true, agents: enriched });
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+router.patch("/", async (req, res) => {
   try {
-    await connectDB();
-    const body = await req.json();
-    const { agentId, ...updates } = body;
-    
-    if (!agentId) return NextResponse.json({ error: "agentId required" }, { status: 400 });
-    
+    const { agentId, ...updates } = req.body;
+    if (!agentId)
+      return res.status(400).json({ error: "agentId required" });
+
     updates.lastSeen = new Date();
-    
+
     const agent = await AgentStatus.findOneAndUpdate(
       { agentId },
       { $set: updates },
       { new: true, upsert: true }
     );
-    
-    return NextResponse.json({ success: true, agent });
+
+    res.json({ success: true, agent });
   } catch (err) {
-    return NextResponse.json({ success: false, error: String(err) }, { status: 500 });
+    res.status(500).json({ success: false, error: String(err) });
   }
-}
+});
+
+export default router;

@@ -1,17 +1,15 @@
-export const dynamic = "force-dynamic";
-
-import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
-import { Memory } from "@/lib/models";
+import { Router } from "express";
+import { Memory } from "../models.js";
 import fs from "fs";
 import path from "path";
 
-const WORKSPACES: Record<string, string> = {
+const router = Router();
+
+const WORKSPACES = {
   kiyo: "/root/.openclaw/workspace",
   arch: "/root/.openclaw/workspace-leads",
 };
 
-// Sync memory files from disk into MongoDB
 async function syncMemoryFiles() {
   for (const [agentId, workspacePath] of Object.entries(WORKSPACES)) {
     const memoryDir = path.join(workspacePath, "memory");
@@ -29,7 +27,6 @@ async function syncMemoryFiles() {
       );
     }
 
-    // Also sync MEMORY.md as long-term
     const memoryMd = path.join(workspacePath, "MEMORY.md");
     if (fs.existsSync(memoryMd)) {
       const content = fs.readFileSync(memoryMd, "utf8");
@@ -42,23 +39,21 @@ async function syncMemoryFiles() {
   }
 }
 
-export async function GET(req: Request) {
+router.get("/", async (req, res) => {
   try {
-    await connectDB();
-    const { searchParams } = new URL(req.url);
-    const agentId = searchParams.get("agentId");
-    const longTermOnly = searchParams.get("longTermOnly") === "true";
+    const { agentId, longTermOnly } = req.query;
 
-    // Sync from disk first
     await syncMemoryFiles();
 
-    const filter: Record<string, unknown> = {};
+    const filter = {};
     if (agentId) filter.agentId = agentId;
-    if (longTermOnly) filter.isLongTerm = true;
+    if (longTermOnly === "true") filter.isLongTerm = true;
 
     const memories = await Memory.find(filter).sort({ date: -1 }).limit(20);
-    return NextResponse.json({ success: true, memories });
+    res.json({ success: true, memories });
   } catch (err) {
-    return NextResponse.json({ success: false, error: String(err) }, { status: 500 });
+    res.status(500).json({ success: false, error: String(err) });
   }
-}
+});
+
+export default router;

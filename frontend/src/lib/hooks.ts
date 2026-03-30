@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -65,6 +65,10 @@ export interface DashboardStats {
   totalAgents: number;
 }
 
+// ─── Backend URL ────────────────────────────────────────────────────────────
+
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
 // ─── Shared SSE Stream ──────────────────────────────────────────────────────
 
 type StreamCallback = (event: string, data: unknown) => void;
@@ -72,7 +76,8 @@ type StreamCallback = (event: string, data: unknown) => void;
 let eventSource: EventSource | null = null;
 let listeners: Set<StreamCallback> = new Set();
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let connectionStatus: "connecting" | "connected" | "disconnected" = "disconnected";
+let connectionStatus: "connecting" | "connected" | "disconnected" =
+  "disconnected";
 let statusListeners: Set<(s: typeof connectionStatus) => void> = new Set();
 
 function setStatus(s: typeof connectionStatus) {
@@ -84,18 +89,27 @@ function connectStream() {
   if (eventSource) return;
   setStatus("connecting");
 
-  const es = new EventSource("/api/stream");
+  const es = new EventSource(`${API}/api/stream`);
   eventSource = es;
 
   es.addEventListener("connected", () => setStatus("connected"));
 
-  const EVENTS = ["agents", "tasks", "activities", "messages", "stats", "error"];
+  const EVENTS = [
+    "agents",
+    "tasks",
+    "activities",
+    "messages",
+    "stats",
+    "error",
+  ];
   EVENTS.forEach((evt) => {
     es.addEventListener(evt, (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
         listeners.forEach((fn) => fn(evt, data));
-      } catch { /* ignore parse errors */ }
+      } catch {
+        /* ignore parse errors */
+      }
     });
   });
 
@@ -103,7 +117,6 @@ function connectStream() {
     setStatus("disconnected");
     es.close();
     eventSource = null;
-    // Reconnect after 3s
     if (!reconnectTimer) {
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
@@ -133,12 +146,13 @@ function subscribe(cb: StreamCallback): () => void {
 // ─── Hooks ──────────────────────────────────────────────────────────────────
 
 export function useConnectionStatus() {
-  const [status, setS] = useState<"connecting" | "connected" | "disconnected">(connectionStatus);
+  const [status, setS] = useState<
+    "connecting" | "connected" | "disconnected"
+  >(connectionStatus);
   useEffect(() => {
     setS(connectionStatus);
     const fn = (s: typeof connectionStatus) => setS(s);
     statusListeners.add(fn);
-    // Ensure stream is running if any hook uses this
     const unsub = subscribe(() => {});
     return () => {
       statusListeners.delete(fn);
@@ -148,7 +162,10 @@ export function useConnectionStatus() {
   return status;
 }
 
-function useStream<T>(event: string, initial: T): { data: T; loading: boolean } {
+function useStream<T>(
+  event: string,
+  initial: T
+): { data: T; loading: boolean } {
   const [data, setData] = useState<T>(initial);
   const [loading, setLoading] = useState(true);
   const gotFirst = useRef(false);
@@ -195,10 +212,13 @@ export function useStats() {
   });
 }
 
-// ─── Mutations (still REST) ─────────────────────────────────────────────────
+// ─── Mutations (REST to backend) ────────────────────────────────────────────
 
-export async function updateAgentStatus(agentId: string, data: Partial<LiveAgent>) {
-  const res = await fetch("/api/agents", {
+export async function updateAgentStatus(
+  agentId: string,
+  data: Partial<LiveAgent>
+) {
+  const res = await fetch(`${API}/api/agents`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ agentId, ...data }),
@@ -207,7 +227,7 @@ export async function updateAgentStatus(agentId: string, data: Partial<LiveAgent
 }
 
 export async function createTask(data: Partial<LiveTask>) {
-  const res = await fetch("/api/tasks", {
+  const res = await fetch(`${API}/api/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -216,7 +236,7 @@ export async function createTask(data: Partial<LiveTask>) {
 }
 
 export async function updateTask(id: string, data: Partial<LiveTask>) {
-  const res = await fetch(`/api/tasks/${id}`, {
+  const res = await fetch(`${API}/api/tasks/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -225,12 +245,12 @@ export async function updateTask(id: string, data: Partial<LiveTask>) {
 }
 
 export async function deleteTask(id: string) {
-  const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API}/api/tasks/${id}`, { method: "DELETE" });
   return res.json();
 }
 
 export async function postActivity(data: Partial<LiveActivity>) {
-  const res = await fetch("/api/activity", {
+  const res = await fetch(`${API}/api/activity`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -239,7 +259,7 @@ export async function postActivity(data: Partial<LiveActivity>) {
 }
 
 export async function sendMessage(data: Partial<LiveMessage>) {
-  const res = await fetch("/api/messages", {
+  const res = await fetch(`${API}/api/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),

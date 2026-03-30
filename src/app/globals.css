@@ -77,9 +77,20 @@
 @layer base {
   * {
     @apply border-border;
+    -webkit-tap-highlight-color: transparent;
+    box-sizing: border-box;
   }
   body {
     @apply bg-background text-foreground;
+    overscroll-behavior: none;
+  }
+  /* Minimum touch target size */
+  button, [role="button"], a, input, select, textarea {
+    min-height: 44px;
+  }
+  /* Remove min-height for icon-only small buttons */
+  button.h-7, button.h-8 {
+    min-height: unset;
   }
 }
 

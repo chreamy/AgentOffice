@@ -9,8 +9,17 @@ import { CollaborationHub } from "@/components/collaboration-hub";
 import { ActivityFeed } from "@/components/activity-feed";
 import { Header } from "@/components/header";
 import { Sidebar } from "@/components/sidebar";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
+import { cn } from "@/lib/utils";
+
+const TABS = [
+  { id: "command",   label: "Command",   emoji: "🎯" },
+  { id: "agents",    label: "Agents",    emoji: "🏗️" },
+  { id: "analytics", label: "Analytics", emoji: "📊" },
+  { id: "tasks",     label: "Tasks",     emoji: "✅" },
+  { id: "collab",    label: "Collab",    emoji: "💬" },
+  { id: "activity",  label: "Activity",  emoji: "⚡" },
+];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("command");
@@ -18,47 +27,79 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background grid-bg">
-      <Header />
+      <Header onMenuClick={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
-      <div className="flex h-[calc(100vh-64px)]">
+      {/* ── Desktop layout ── */}
+      <div className="hidden md:flex h-[calc(100vh-64px)]">
         <Sidebar
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
 
-        <main className="flex-1 overflow-hidden flex flex-col">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
-            <div className="border-b border-border/50 px-6 py-2 flex-shrink-0">
-              <TabsList>
-                <TabsTrigger value="command">🎯 <span className="hidden sm:inline ml-1">Command</span></TabsTrigger>
-                <TabsTrigger value="agents">🏗️ <span className="hidden sm:inline ml-1">Agents</span></TabsTrigger>
-                <TabsTrigger value="analytics">📊 <span className="hidden sm:inline ml-1">Analytics</span></TabsTrigger>
-                <TabsTrigger value="tasks">✅ <span className="hidden sm:inline ml-1">Tasks</span></TabsTrigger>
-                <TabsTrigger value="collab">💬 <span className="hidden sm:inline ml-1">Collab</span></TabsTrigger>
-              </TabsList>
-            </div>
+        <main className="flex-1 overflow-hidden flex flex-col min-w-0">
+          {/* Desktop tab bar */}
+          <div className="border-b border-border/50 px-4 py-2 flex-shrink-0 flex gap-1 overflow-x-auto">
+            {TABS.filter(t => t.id !== "activity").map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors",
+                  activeTab === tab.id
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+              >
+                <span>{tab.emoji}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
 
-            <div className="flex-1 overflow-auto">
-              <TabsContent value="command" className="mt-0 p-6">
-                <CommandCenter />
-              </TabsContent>
-              <TabsContent value="agents" className="mt-0 p-6">
-                <AgentPresencePanel />
-              </TabsContent>
-              <TabsContent value="analytics" className="mt-0 p-6">
-                <AnalyticsObservatory />
-              </TabsContent>
-              <TabsContent value="tasks" className="mt-0 p-6">
-                <TaskCommand />
-              </TabsContent>
-              <TabsContent value="collab" className="mt-0 p-6 h-[calc(100vh-140px)]">
-                <CollaborationHub />
-              </TabsContent>
-            </div>
-          </Tabs>
+          <div className="flex-1 overflow-auto p-4 lg:p-6">
+            {activeTab === "command"   && <CommandCenter />}
+            {activeTab === "agents"    && <AgentPresencePanel />}
+            {activeTab === "analytics" && <AnalyticsObservatory />}
+            {activeTab === "tasks"     && <TaskCommand />}
+            {activeTab === "collab"    && <div className="h-[calc(100vh-160px)]"><CollaborationHub /></div>}
+          </div>
         </main>
 
         <ActivityFeed />
+      </div>
+
+      {/* ── Mobile layout ── */}
+      <div className="md:hidden flex flex-col h-[calc(100vh-56px)]">
+        {/* Mobile content area */}
+        <div className="flex-1 overflow-auto pb-16">
+          <div className="p-4">
+            {activeTab === "command"   && <CommandCenter />}
+            {activeTab === "agents"    && <AgentPresencePanel />}
+            {activeTab === "analytics" && <AnalyticsObservatory />}
+            {activeTab === "tasks"     && <TaskCommand />}
+            {activeTab === "collab"    && <div className="h-[calc(100vh-200px)]"><CollaborationHub /></div>}
+            {activeTab === "activity"  && <ActivityFeed mobile />}
+          </div>
+        </div>
+
+        {/* Mobile bottom tab bar */}
+        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur border-t border-border/50 flex">
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "flex-1 flex flex-col items-center justify-center py-2 gap-0.5 min-h-[56px] transition-colors",
+                activeTab === tab.id
+                  ? "text-primary"
+                  : "text-muted-foreground"
+              )}
+            >
+              <span className="text-xl leading-none">{tab.emoji}</span>
+              <span className="text-[10px] font-medium">{tab.label}</span>
+            </button>
+          ))}
+        </nav>
       </div>
 
       <Toaster />

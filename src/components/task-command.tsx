@@ -110,8 +110,8 @@ export function TaskCommand() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold">Task Command</h2>
           <p className="text-muted-foreground">Manage and track agent tasks — synced to MongoDB</p>
@@ -169,7 +169,7 @@ export function TaskCommand() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: "To Do", value: stats.todo, icon: Circle, color: "text-muted-foreground" },
           { label: "In Progress", value: stats.inProgress, icon: Clock, color: "text-amber-500" },
@@ -189,20 +189,21 @@ export function TaskCommand() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search tasks..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-10" />
         </div>
-        <Tabs value={selectedStatus} onValueChange={setSelectedStatus}>
-          <TabsList className="glass">
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="todo">To Do</TabsTrigger>
-            <TabsTrigger value="in-progress">In Progress</TabsTrigger>
-            <TabsTrigger value="review">Review</TabsTrigger>
-            <TabsTrigger value="done">Done</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex gap-1 overflow-x-auto pb-1 flex-shrink-0">
+          {["all","todo","in-progress","review","done"].map(s => (
+            <button key={s} onClick={() => setSelectedStatus(s)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors flex-shrink-0 ${
+                selectedStatus === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}>
+              {s === "all" ? "All" : s === "in-progress" ? "In Progress" : s.charAt(0).toUpperCase() + s.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Task List */}

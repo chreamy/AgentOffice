@@ -17,14 +17,6 @@ const STATUS_DOT: Record<string, string> = {
   error: "bg-red-400",
 };
 
-const AGENT_BG: Record<string, string> = {
-  kiyo: "from-blue-600 to-cyan-500",
-  arch: "from-amber-500 to-orange-500",
-  nova: "from-purple-500 to-pink-500",
-  atlas: "from-emerald-500 to-green-400",
-  echo: "from-rose-500 to-red-400",
-};
-
 const STATUS_STYLE: Record<string, string> = {
   working: "bg-amber-500/20 text-amber-400",
   idle: "bg-emerald-500/20 text-emerald-400",
@@ -67,14 +59,14 @@ export default function AgentsPage() {
                 className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden hover:border-white/20 transition-colors"
               >
                 <div
-                  className={`h-1.5 bg-gradient-to-r ${AGENT_BG[agent.agentId] ?? "from-gray-500 to-gray-600"}`}
+                  className={`h-1.5 bg-gradient-to-r ${"from-blue-500 to-purple-600"}`}
                 />
                 <div className="p-5 space-y-4">
                   {/* Avatar + name */}
                   <div className="flex items-start gap-3">
                     <div className="relative">
                       <div
-                        className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${AGENT_BG[agent.agentId] ?? "from-gray-500 to-gray-600"} flex items-center justify-center text-xl shadow-lg`}
+                        className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${"from-blue-500 to-purple-600"} flex items-center justify-center text-xl shadow-lg`}
                       >
                         {agent.emoji}
                       </div>

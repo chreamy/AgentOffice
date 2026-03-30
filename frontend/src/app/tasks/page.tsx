@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  useAgents,
   useTasks,
   createTask,
   updateTask,
@@ -24,25 +25,23 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export default function TasksPage() {
+  const { data: agents } = useAgents();
   const { data: tasks, loading } = useTasks();
   const [showNewTask, setShowNewTask] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newPriority, setNewPriority] = useState<"P0" | "P1" | "P2" | "P3">("P2");
-  const [newAssignee, setNewAssignee] = useState("kiyo");
+  const [newAssignee, setNewAssignee] = useState("");
   const [filter, setFilter] = useState("all");
 
   const handleCreateTask = async () => {
     if (!newTitle.trim()) return;
-    const agentMap: Record<string, string> = {
-      kiyo: "Kiyo 🦾", arch: "Arch 🏗️", nova: "Nova ✨",
-      atlas: "Atlas 🌐", echo: "Echo 📊",
-    };
+    const agent = agents.find((a) => a.agentId === newAssignee);
     await createTask({
       title: newTitle,
       description: newDesc,
       priority: newPriority,
-      assignee: agentMap[newAssignee] || newAssignee,
+      assignee: agent ? `${agent.name} ${agent.emoji}` : newAssignee,
       assigneeId: newAssignee,
       status: "todo",
       progress: 0,
@@ -148,11 +147,12 @@ export default function TasksPage() {
               onChange={(e) => setNewAssignee(e.target.value)}
               className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs focus:outline-none"
             >
-              <option value="kiyo">Kiyo 🦾</option>
-              <option value="arch">Arch 🏗️</option>
-              <option value="nova">Nova ✨</option>
-              <option value="atlas">Atlas 🌐</option>
-              <option value="echo">Echo 📊</option>
+              <option value="">Unassigned</option>
+              {agents.map((a) => (
+                <option key={a.agentId} value={a.agentId}>
+                  {a.name} {a.emoji}
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex gap-2">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useMessages, sendMessage } from "@/lib/hooks";
+import { useAgents, useMessages, sendMessage } from "@/lib/hooks";
 
 function timeAgo(dateStr: string) {
   const s = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
@@ -10,32 +10,36 @@ function timeAgo(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-const AGENT_BG: Record<string, string> = {
-  kiyo: "from-blue-600 to-cyan-500",
-  arch: "from-amber-500 to-orange-500",
-  nova: "from-purple-500 to-pink-500",
-  atlas: "from-emerald-500 to-green-400",
-  echo: "from-rose-500 to-red-400",
-};
 
 export default function CollabPage() {
+  const { data: agents } = useAgents();
   const { data: messages, loading } = useMessages();
   const [msgInput, setMsgInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendAs, setSendAs] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Default to first agent once loaded
+  useEffect(() => {
+    if (!sendAs && agents.length > 0) {
+      setSendAs(agents[0].agentId);
+    }
+  }, [agents, sendAs]);
+
   const handleSend = async () => {
     const content = msgInput.trim();
     if (!content || sending) return;
+    const agent = agents.find((a) => a.agentId === sendAs);
+    if (!agent) return;
     setSending(true);
     await sendMessage({
-      sender: "Arch",
-      senderId: "arch",
-      senderEmoji: "🏗️",
+      sender: agent.name,
+      senderId: agent.agentId,
+      senderEmoji: agent.emoji,
       content,
       channel: "general",
       type: "text",
@@ -82,7 +86,7 @@ export default function CollabPage() {
           messages.map((msg) => (
             <div key={msg._id} className="flex gap-3">
               <div
-                className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br ${AGENT_BG[msg.senderId] ?? "from-blue-500 to-purple-600"} flex items-center justify-center text-sm sm:text-lg shrink-0`}
+                className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-sm sm:text-lg shrink-0"
               >
                 {msg.senderEmoji || msg.sender[0]}
               </div>
@@ -106,6 +110,17 @@ export default function CollabPage() {
       {/* Input */}
       <div className="px-4 sm:px-6 py-3 border-t border-white/10 shrink-0">
         <div className="flex items-center gap-2">
+          <select
+            value={sendAs}
+            onChange={(e) => setSendAs(e.target.value)}
+            className="px-2 py-2 rounded-lg bg-white/5 border border-white/10 text-xs focus:outline-none shrink-0"
+          >
+            {agents.map((a) => (
+              <option key={a.agentId} value={a.agentId}>
+                {a.emoji} {a.name}
+              </option>
+            ))}
+          </select>
           <input
             value={msgInput}
             onChange={(e) => setMsgInput(e.target.value)}

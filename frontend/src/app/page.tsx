@@ -23,14 +23,6 @@ const STATUS_DOT: Record<string, string> = {
   error: "bg-red-400",
 };
 
-const AGENT_BG: Record<string, string> = {
-  kiyo: "from-blue-600 to-cyan-500",
-  arch: "from-amber-500 to-orange-500",
-  nova: "from-purple-500 to-pink-500",
-  atlas: "from-emerald-500 to-green-400",
-  echo: "from-rose-500 to-red-400",
-};
-
 const ACTIVITY_DOT: Record<string, string> = {
   success: "bg-emerald-400",
   warning: "bg-amber-400",
@@ -117,7 +109,7 @@ export default function CommandPage() {
                   >
                     <div className="relative shrink-0">
                       <div
-                        className={`w-10 h-10 rounded-xl bg-gradient-to-br ${AGENT_BG[agent.agentId] ?? "from-gray-500 to-gray-600"} flex items-center justify-center text-lg`}
+                        className={`w-10 h-10 rounded-xl bg-gradient-to-br ${"from-blue-500 to-purple-600"} flex items-center justify-center text-lg`}
                       >
                         {agent.emoji}
                       </div>

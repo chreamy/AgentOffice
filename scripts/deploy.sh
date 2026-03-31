@@ -15,6 +15,9 @@ git pull origin main
 echo "--- Installing backend deps ---"
 cd "$BACKEND_DIR" && npm install --omit=dev
 
+echo "--- Ensuring frontend env ---"
+echo "NEXT_PUBLIC_API_URL=http://204.168.215.253:4000" > "$FRONTEND_DIR/.env.local"
+
 echo "--- Installing frontend deps ---"
 cd "$FRONTEND_DIR" && npm install
 

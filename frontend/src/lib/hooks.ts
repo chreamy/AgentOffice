@@ -25,13 +25,15 @@ export interface LiveTask {
   _id: string;
   title: string;
   description: string;
-  status: "todo" | "in-progress" | "review" | "done";
+  status: "queued" | "in-progress" | "done";
   priority: "P0" | "P1" | "P2" | "P3";
-  assignee: string;
-  assigneeId: string;
-  tags: string[];
+  agentName: string;
+  agentId: string;
+  agentEmoji: string;
   dueDate: string;
-  progress: number;
+  queuedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
   createdAt: string;
 }
 
@@ -240,6 +242,24 @@ export async function updateTask(id: string, data: Partial<LiveTask>) {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function startTask(id: string, agentId: string) {
+  const res = await fetch(`${API}/api/tasks/${id}/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agentId }),
+  });
+  return res.json();
+}
+
+export async function completeTask(id: string, agentId: string) {
+  const res = await fetch(`${API}/api/tasks/${id}/done`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agentId }),
   });
   return res.json();
 }

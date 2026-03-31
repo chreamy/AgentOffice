@@ -21,6 +21,7 @@ app.use(express.json());
 // Routes
 app.use("/api/agents", agentsRouter);
 app.use("/api/tasks", tasksRouter);
+// Alias for agent scripts: POST /api/tasks/:id/start and /done are handled inside tasksRouter
 app.use("/api/activity", activityRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/analytics", analyticsRouter);

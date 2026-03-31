@@ -1,5 +1,8 @@
 import { Router } from "express";
-import { AgentStatus, Task, Activity, Message } from "../models.js";
+import { AGENTS, buildAgent } from "./agents.js";
+import { Task } from "../models.js";
+import { Activity } from "../models.js";
+import { Message } from "../models.js";
 
 const router = Router();
 
@@ -23,21 +26,20 @@ router.get("/", (req, res) => {
   const poll = async () => {
     if (closed) return;
     try {
-      const [agents, tasks, activities, messages] = await Promise.all([
-        AgentStatus.find({}).sort({ agentId: 1 }).lean(),
-        Task.find({}).sort({ createdAt: -1 }).limit(100).lean(),
-        Activity.find({}).sort({ createdAt: -1 }).limit(50).lean(),
-        Message.find({ channel: "general" })
-          .sort({ createdAt: 1 })
-          .limit(50)
-          .lean(),
-      ]);
+      // Agents: read directly from OpenClaw workspace files (Star-Office-UI pattern)
+      const agents = AGENTS.map(buildAgent);
 
-      const agentsOnline = agents.filter(
-        (a) =>
-          a.status !== "idle" ||
-          Date.now() - new Date(a.lastSeen).getTime() < 300000
-      ).length;
+      // Tasks, activities, messages from MongoDB
+      let tasks = [], activities = [], messages = [];
+      try {
+        [tasks, activities, messages] = await Promise.all([
+          Task.find({}).sort({ createdAt: -1 }).limit(100).lean(),
+          Activity.find({}).sort({ createdAt: -1 }).limit(50).lean(),
+          Message.find({ channel: "general" }).sort({ createdAt: 1 }).limit(50).lean(),
+        ]);
+      } catch { /* DB may not be connected yet — serve agents anyway */ }
+
+      const agentsOnline = agents.filter(a => a.status !== "idle").length;
 
       send("agents", agents);
       send("tasks", tasks);
@@ -45,8 +47,8 @@ router.get("/", (req, res) => {
       send("messages", messages);
       send("stats", {
         totalTasks: tasks.length,
-        completedTasks: tasks.filter((t) => t.status === "done").length,
-        inProgressTasks: tasks.filter((t) => t.status === "in-progress").length,
+        completedTasks: tasks.filter(t => t.status === "done").length,
+        inProgressTasks: tasks.filter(t => t.status === "in-progress").length,
         agentsOnline,
         totalAgents: agents.length,
       });
@@ -55,11 +57,8 @@ router.get("/", (req, res) => {
     }
   };
 
-  // Initial burst
   poll();
-
-  // Then every 2s
-  const interval = setInterval(poll, 2000);
+  const interval = setInterval(poll, 3000);
 
   req.on("close", () => {
     closed = true;

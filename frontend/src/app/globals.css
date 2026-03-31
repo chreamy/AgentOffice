@@ -37,7 +37,18 @@ select:focus {
 }
 
 /* Select dropdown styling for dark bg */
+select {
+  appearance: auto;
+  -webkit-appearance: menulist;
+  cursor: pointer;
+}
+
 select option {
   background: #1a1f2e;
   color: #e5e7eb;
+}
+
+/* Ensure buttons are clickable */
+button {
+  cursor: pointer;
 }

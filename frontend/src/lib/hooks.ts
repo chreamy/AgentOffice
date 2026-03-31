@@ -33,6 +33,13 @@ export interface KimiModel {
   ctx: string;
 }
 
+export const DEFAULT_MODELS: KimiModel[] = [
+  { id: "kimi-k2.5", name: "Kimi K2.5", ctx: "256k" },
+  { id: "moonshot-v1-128k", name: "Moonshot v1 128k", ctx: "128k" },
+  { id: "moonshot-v1-32k", name: "Moonshot v1 32k", ctx: "32k" },
+  { id: "moonshot-v1-8k", name: "Moonshot v1 8k", ctx: "8k" },
+];
+
 // ─── API helpers ────────────────────────────────────────────────────────────
 
 export async function fetchAgents(): Promise<Agent[]> {
@@ -113,9 +120,11 @@ export function useAgents() {
 }
 
 export function useModels() {
-  const [models, setModels] = useState<KimiModel[]>([]);
+  const [models, setModels] = useState<KimiModel[]>(DEFAULT_MODELS);
   useEffect(() => {
-    fetchModels().then(setModels);
+    fetchModels().then((m) => {
+      if (m.length > 0) setModels(m);
+    });
   }, []);
   return models;
 }

@@ -283,7 +283,7 @@ export default function Home() {
               <select
                 value={activeAgent.model}
                 onChange={(e) => handleModelChange(e.target.value)}
-                className="hidden sm:block px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] focus:outline-none"
+                className="hidden sm:block px-2 py-1 rounded-lg bg-[#1a1f2e] border border-white/10 text-[11px] text-gray-200 focus:outline-none"
               >
                 {models.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -533,7 +533,7 @@ export default function Home() {
                 <select
                   value={newModel}
                   onChange={(e) => setNewModel(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-white/10 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
                 >
                   {models.map((m) => (
                     <option key={m.id} value={m.id}>

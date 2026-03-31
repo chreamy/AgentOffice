@@ -3,9 +3,8 @@ import "./globals.css";
 import { Nav } from "./nav";
 
 export const metadata: Metadata = {
-  title: "OpenClaw Dashboard | Agent Activity Tracker",
-  description:
-    "Real-time OpenClaw agent activity dashboard with WebSocket streaming",
+  title: "Agent Office | Multi-Agent Chat",
+  description: "Multi-agent chat dashboard powered by Moonshot AI",
 };
 
 export default function RootLayout({

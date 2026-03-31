@@ -3,8 +3,8 @@ import { ChatSession } from "../models.js";
 
 const router = Router();
 
-const KIMI_BASE = process.env.KIMI_BASE_URL || "https://api.moonshot.ai/v1";
-const KIMI_KEY = process.env.KIMI_API_KEY || "";
+const MOONSHOT_BASE = process.env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/v1";
+const MOONSHOT_KEY = () => process.env.MOONSHOT_API_KEY || "";
 
 const AVAILABLE_MODELS = [
   { id: "kimi-k2.5", name: "Kimi K2.5", ctx: "256k" },
@@ -13,82 +13,89 @@ const AVAILABLE_MODELS = [
   { id: "moonshot-v1-8k", name: "Moonshot v1 8k", ctx: "8k" },
 ];
 
-// GET /api/chat/models — list available models
+// GET /models
 router.get("/models", (_req, res) => {
   res.json({ models: AVAILABLE_MODELS });
 });
 
-// GET /api/chat/sessions — list all sessions
-router.get("/sessions", async (_req, res) => {
+// GET /agents — all agents (= chat sessions), lightweight list
+router.get("/agents", async (_req, res) => {
   try {
     const sessions = await ChatSession.find({})
       .sort({ pinned: -1, updatedAt: -1 })
-      .select("title agentId agentName agentEmoji model pinned createdAt updatedAt messages")
       .lean();
-    // Include message count but don't send full messages in list
-    const list = sessions.map((s) => ({
-      ...s,
+    const agents = sessions.map((s) => ({
+      _id: s._id,
+      name: s.name,
+      emoji: s.emoji,
+      role: s.role,
+      model: s.model,
+      systemPrompt: s.systemPrompt,
+      pinned: s.pinned,
       messageCount: s.messages?.length || 0,
       lastMessage: s.messages?.length
-        ? s.messages[s.messages.length - 1].content.slice(0, 80)
+        ? s.messages[s.messages.length - 1].content.slice(0, 100)
         : "",
-      messages: undefined,
+      lastRole: s.messages?.length
+        ? s.messages[s.messages.length - 1].role
+        : null,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
     }));
-    res.json({ sessions: list });
+    res.json({ agents });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/chat/sessions — create new session
-router.post("/sessions", async (req, res) => {
+// POST /agents — create new agent
+router.post("/agents", async (req, res) => {
   try {
-    const { title, agentId, agentName, agentEmoji, model, systemPrompt } = req.body;
-    const session = await ChatSession.create({
-      title: title || "New Chat",
-      agentId: agentId || "",
-      agentName: agentName || "",
-      agentEmoji: agentEmoji || "",
+    const { name, emoji, role, model, systemPrompt } = req.body;
+    if (!name) return res.status(400).json({ error: "name required" });
+    const agent = await ChatSession.create({
+      name: name || "New Agent",
+      emoji: emoji || "🤖",
+      role: role || "Assistant",
       model: model || "kimi-k2.5",
       systemPrompt: systemPrompt || "",
       messages: [],
     });
-    res.json({ session });
+    res.json({ agent });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/chat/sessions/:id — get session with full messages
-router.get("/sessions/:id", async (req, res) => {
+// GET /agents/:id — full agent with messages
+router.get("/agents/:id", async (req, res) => {
   try {
-    const session = await ChatSession.findById(req.params.id).lean();
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    res.json({ session });
+    const agent = await ChatSession.findById(req.params.id).lean();
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+    res.json({ agent });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// PATCH /api/chat/sessions/:id — update session metadata
-router.patch("/sessions/:id", async (req, res) => {
+// PATCH /agents/:id — update agent settings
+router.patch("/agents/:id", async (req, res) => {
   try {
-    const { title, model, systemPrompt, pinned } = req.body;
+    const allowed = ["name", "emoji", "role", "model", "systemPrompt", "pinned"];
     const update = {};
-    if (title !== undefined) update.title = title;
-    if (model !== undefined) update.model = model;
-    if (systemPrompt !== undefined) update.systemPrompt = systemPrompt;
-    if (pinned !== undefined) update.pinned = pinned;
-    const session = await ChatSession.findByIdAndUpdate(req.params.id, update, { new: true }).lean();
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    res.json({ session });
+    for (const k of allowed) {
+      if (req.body[k] !== undefined) update[k] = req.body[k];
+    }
+    const agent = await ChatSession.findByIdAndUpdate(req.params.id, update, { new: true }).lean();
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+    res.json({ agent });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// DELETE /api/chat/sessions/:id
-router.delete("/sessions/:id", async (req, res) => {
+// DELETE /agents/:id
+router.delete("/agents/:id", async (req, res) => {
   try {
     await ChatSession.findByIdAndDelete(req.params.id);
     res.json({ success: true });
@@ -97,53 +104,60 @@ router.delete("/sessions/:id", async (req, res) => {
   }
 });
 
-// POST /api/chat/sessions/:id/send — send message and stream Kimi response
-router.post("/sessions/:id/send", async (req, res) => {
+// DELETE /agents/:id/messages — clear conversation
+router.delete("/agents/:id/messages", async (req, res) => {
   try {
-    const session = await ChatSession.findById(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
+    const agent = await ChatSession.findById(req.params.id);
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+    agent.messages = [];
+    await agent.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-    if (!KIMI_KEY) {
-      return res.status(500).json({ error: "KIMI_API_KEY not configured. Set it in .env" });
+// POST /agents/:id/send — send message, stream Kimi response
+router.post("/agents/:id/send", async (req, res) => {
+  try {
+    const agent = await ChatSession.findById(req.params.id);
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+    const key = MOONSHOT_KEY();
+    if (!key) {
+      return res.status(500).json({ error: "MOONSHOT_API_KEY not configured" });
     }
 
     const { content } = req.body;
     if (!content) return res.status(400).json({ error: "content required" });
 
-    // Add user message
-    session.messages.push({ role: "user", content });
+    agent.messages.push({ role: "user", content });
+    await agent.save();
 
-    // Auto-title on first message
-    if (session.messages.length === 1 && session.title === "New Chat") {
-      session.title = content.slice(0, 50) + (content.length > 50 ? "..." : "");
-    }
-
-    await session.save();
-
-    // Build messages for Kimi
+    // Build API messages
     const apiMessages = [];
-    if (session.systemPrompt) {
-      apiMessages.push({ role: "system", content: session.systemPrompt });
+    if (agent.systemPrompt) {
+      apiMessages.push({ role: "system", content: agent.systemPrompt });
     }
-    for (const m of session.messages) {
+    for (const m of agent.messages) {
       apiMessages.push({ role: m.role, content: m.content });
     }
 
-    // Stream response via SSE
+    // SSE stream
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
 
-    const response = await fetch(`${KIMI_BASE}/chat/completions`, {
+    const response = await fetch(`${MOONSHOT_BASE}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${KIMI_KEY}`,
+        Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model: session.model,
+        model: agent.model,
         messages: apiMessages,
         stream: true,
         temperature: 0.7,
@@ -152,7 +166,7 @@ router.post("/sessions/:id/send", async (req, res) => {
 
     if (!response.ok) {
       const errText = await response.text();
-      res.write(`data: ${JSON.stringify({ type: "error", text: `Kimi API error ${response.status}: ${errText}` })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: "error", text: `API error ${response.status}: ${errText}` })}\n\n`);
       res.end();
       return;
     }
@@ -183,15 +197,12 @@ router.post("/sessions/:id/send", async (req, res) => {
             fullContent += delta.content;
             res.write(`data: ${JSON.stringify({ type: "token", text: delta.content })}\n\n`);
           }
-        } catch {
-          // skip unparseable chunks
-        }
+        } catch {}
       }
     }
 
-    // Save assistant message
-    session.messages.push({ role: "assistant", content: fullContent });
-    await session.save();
+    agent.messages.push({ role: "assistant", content: fullContent });
+    await agent.save();
 
     res.write(`data: ${JSON.stringify({ type: "done", fullContent })}\n\n`);
     res.end();

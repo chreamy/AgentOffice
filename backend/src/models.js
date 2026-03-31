@@ -68,7 +68,7 @@ const MemorySchema = new Schema(
   { timestamps: true }
 );
 
-// ─── Chat Sessions (Kimi API) ──────────────────────────────────────────────
+// ─── Chat Sessions (Agents = Kimi chat sessions) ───────────────────────────
 const ChatMessageSchema = new Schema({
   role: { type: String, enum: ["system", "user", "assistant"], required: true },
   content: { type: String, required: true },
@@ -76,10 +76,9 @@ const ChatMessageSchema = new Schema({
 
 const ChatSessionSchema = new Schema(
   {
-    title: { type: String, default: "New Chat" },
-    agentId: { type: String, default: "" },
-    agentName: { type: String, default: "" },
-    agentEmoji: { type: String, default: "" },
+    name: { type: String, default: "New Agent" },
+    emoji: { type: String, default: "🤖" },
+    role: { type: String, default: "Assistant" },
     model: { type: String, default: "kimi-k2.5" },
     systemPrompt: { type: String, default: "" },
     messages: [ChatMessageSchema],

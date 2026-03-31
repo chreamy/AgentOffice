@@ -1,178 +1,572 @@
 "use client";
 
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   useAgents,
-  useTasks,
-  useActivity,
-  useStats,
+  useModels,
+  fetchAgent,
+  createAgent,
+  patchAgent,
+  deleteAgent,
+  clearMessages,
+  sendMessageStream,
+  type Agent,
+  type ChatMessage,
 } from "@/lib/hooks";
 
-function timeAgo(dateStr: string) {
-  const s = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
+export default function Home() {
+  const { agents, loading, refresh } = useAgents();
+  const models = useModels();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [activeAgent, setActiveAgent] = useState<Agent | null>(null);
+  const [input, setInput] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const [streamText, setStreamText] = useState("");
+  const [sidebar, setSidebar] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newEmoji, setNewEmoji] = useState("🤖");
+  const [newRole, setNewRole] = useState("");
+  const [newModel, setNewModel] = useState("kimi-k2.5");
+  const [newPrompt, setNewPrompt] = useState("");
+  const endRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-const STATUS_DOT: Record<string, string> = {
-  working: "bg-amber-400",
-  idle: "bg-emerald-400",
-  researching: "bg-blue-400",
-  syncing: "bg-purple-400",
-  error: "bg-red-400",
-};
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streamText]);
 
-const ACTIVITY_DOT: Record<string, string> = {
-  success: "bg-emerald-400",
-  warning: "bg-amber-400",
-  error: "bg-red-400",
-  info: "bg-blue-400",
-};
+  const loadAgent = useCallback(async (id: string) => {
+    setActiveId(id);
+    setSidebar(false);
+    setShowNew(false);
+    setShowSettings(false);
+    const a = await fetchAgent(id);
+    if (a) {
+      setMessages(a.messages || []);
+      setActiveAgent(a);
+    }
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
 
-export default function CommandPage() {
-  const { data: agents, loading: agentsLoading } = useAgents();
-  const { data: tasks } = useTasks();
-  const { data: activities } = useActivity();
-  const { data: stats } = useStats();
+  const handleCreate = async () => {
+    if (!newName.trim()) return;
+    const agent = await createAgent({
+      name: newName.trim(),
+      emoji: newEmoji || "🤖",
+      role: newRole.trim() || "Assistant",
+      model: newModel,
+      systemPrompt: newPrompt.trim(),
+    });
+    await refresh();
+    setShowNew(false);
+    setNewName("");
+    setNewEmoji("🤖");
+    setNewRole("");
+    setNewPrompt("");
+    loadAgent(agent._id);
+  };
 
-  const activeTasks = tasks.filter((t) => t.status === "in-progress").length;
-  const doneTasks = tasks.filter((t) => t.status === "done").length;
+  const handleDelete = async (id: string) => {
+    await deleteAgent(id);
+    await refresh();
+    if (activeId === id) {
+      setActiveId(null);
+      setMessages([]);
+      setActiveAgent(null);
+    }
+  };
+
+  const handleClear = async () => {
+    if (!activeId) return;
+    await clearMessages(activeId);
+    setMessages([]);
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || streaming || !activeId) return;
+    const content = input.trim();
+    setInput("");
+
+    setMessages((prev) => [...prev, { role: "user", content }]);
+    setStreaming(true);
+    setStreamText("");
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const response = await sendMessageStream(activeId, content, controller.signal);
+
+      if (!response.ok) {
+        const err = await response.json();
+        setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.error}` }]);
+        setStreaming(false);
+        return;
+      }
+
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let full = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+          try {
+            const parsed = JSON.parse(trimmed.slice(6));
+            if (parsed.type === "token") {
+              full += parsed.text;
+              setStreamText(full);
+            } else if (parsed.type === "error") {
+              full += `\n[Error: ${parsed.text}]`;
+              setStreamText(full);
+            }
+          } catch {}
+        }
+      }
+
+      setMessages((prev) => [...prev, { role: "assistant", content: full }]);
+      setStreamText("");
+      refresh();
+    } catch (err: unknown) {
+      if ((err as Error).name !== "AbortError") {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `Error: ${(err as Error).message}` },
+        ]);
+      }
+    } finally {
+      setStreaming(false);
+      abortRef.current = null;
+    }
+  };
+
+  const handleStop = () => abortRef.current?.abort();
+
+  const handleModelChange = async (model: string) => {
+    if (!activeId) return;
+    await patchAgent(activeId, { model });
+    setActiveAgent((prev) => (prev ? { ...prev, model } : prev));
+    refresh();
+  };
+
+  const handleSaveSettings = async () => {
+    if (!activeId || !activeAgent) return;
+    await patchAgent(activeId, {
+      name: activeAgent.name,
+      emoji: activeAgent.emoji,
+      role: activeAgent.role,
+      systemPrompt: activeAgent.systemPrompt,
+    });
+    refresh();
+    setShowSettings(false);
+  };
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 p-6 sm:p-8">
-        <div className="relative z-10">
-          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-            OpenClaw Dashboard
-          </h2>
-          <p className="text-white/70 text-sm sm:text-base">
-            {agentsLoading
-              ? "Connecting to stream..."
-              : `${stats.totalAgents} agents connected · ${activeTasks} active · ${doneTasks} completed`}
-          </p>
-        </div>
+    <div className="flex h-[calc(100vh-56px)]">
+      {/* Mobile sidebar overlay */}
+      {sidebar && (
         <div
-          className="absolute inset-0 opacity-20"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 20% 50%, white 1px, transparent 1px)",
-            backgroundSize: "30px 30px",
-          }}
+          className="fixed inset-0 bg-black/50 z-30 sm:hidden"
+          onClick={() => setSidebar(false)}
         />
-      </div>
+      )}
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {[
-          { label: "Active Tasks", value: activeTasks, color: "text-amber-400" },
-          { label: "Completed", value: doneTasks, color: "text-emerald-400" },
-          { label: "Total Tasks", value: stats.totalTasks, color: "text-blue-400" },
-          {
-            label: "Agents Online",
-            value: `${stats.agentsOnline}/${stats.totalAgents}`,
-            color: "text-purple-400",
-          },
-        ].map((s) => (
-          <div
-            key={s.label}
-            className="rounded-xl bg-white/5 border border-white/10 p-4"
+      {/* ── Sidebar ── */}
+      <div
+        className={`${
+          sidebar ? "translate-x-0" : "-translate-x-full sm:translate-x-0"
+        } fixed sm:relative z-40 sm:z-auto w-72 sm:w-72 lg:w-80 h-full border-r border-white/10 bg-[#0a0e1a] sm:bg-transparent flex flex-col transition-transform duration-200`}
+      >
+        <div className="p-3 border-b border-white/10 flex items-center justify-between">
+          <h3 className="text-sm font-bold text-gray-300">Agents</h3>
+          <button
+            onClick={() => { setShowNew(true); setSidebar(false); }}
+            className="w-7 h-7 rounded-lg bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-sm transition-colors"
+            title="New agent"
           >
-            <p className="text-xs text-gray-500">{s.label}</p>
-            <p className={`text-2xl sm:text-3xl font-bold mt-1 ${s.color}`}>
-              {s.value}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Agent summary + Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Agent cards */}
-        <div className="lg:col-span-2 rounded-xl bg-white/5 border border-white/10 p-4 sm:p-5">
-          <h3 className="font-semibold mb-4 flex items-center gap-2 text-sm">
-            🧠 Agent Activity
-            <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-400">
-              Live
-            </span>
-          </h3>
-          <div className="space-y-3">
-            {agentsLoading
-              ? Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse" />
-                ))
-              : agents.map((agent) => (
-                  <div
-                    key={agent.agentId}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
-                  >
-                    <div className="relative shrink-0">
-                      <div
-                        className={`w-10 h-10 rounded-xl bg-gradient-to-br ${"from-blue-500 to-purple-600"} flex items-center justify-center text-lg`}
-                      >
-                        {agent.emoji}
-                      </div>
-                      <span
-                        className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0a0e1a] ${STATUS_DOT[agent.status] ?? "bg-gray-500"}`}
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">{agent.name}</span>
-                        <span className="text-[10px] text-gray-500 hidden sm:inline">
-                          {agent.role}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 truncate">
-                        {agent.currentTask}
-                      </p>
-                    </div>
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${
-                        agent.status === "working"
-                          ? "bg-amber-500/20 text-amber-400"
-                          : agent.status === "idle"
-                            ? "bg-emerald-500/20 text-emerald-400"
-                            : agent.status === "error"
-                              ? "bg-red-500/20 text-red-400"
-                              : "bg-blue-500/20 text-blue-400"
-                      }`}
-                    >
-                      {agent.status}
-                    </span>
-                  </div>
-                ))}
-          </div>
+            +
+          </button>
         </div>
 
-        {/* Recent activity */}
-        <div className="rounded-xl bg-white/5 border border-white/10 p-4 sm:p-5">
-          <h3 className="font-semibold mb-4 text-sm">🕐 Recent Activity</h3>
-          {activities.length === 0 ? (
-            <p className="text-xs text-gray-500 text-center py-8">No activity yet</p>
-          ) : (
-            <div className="space-y-3">
-              {activities.slice(0, 8).map((a) => (
-                <div key={a._id} className="flex items-start gap-2.5 text-xs">
-                  <span
-                    className={`w-2 h-2 rounded-full mt-1 shrink-0 ${ACTIVITY_DOT[a.type] ?? "bg-gray-400"}`}
-                  />
-                  <div className="min-w-0">
-                    <p>
-                      <span className="font-medium">
-                        {a.agentEmoji} {a.agentName}
-                      </span>{" "}
-                      <span className="text-gray-400">{a.message}</span>
-                    </p>
-                    <p className="text-gray-600 text-[10px]">{timeAgo(a.createdAt)}</p>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {loading
+            ? Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse" />
+              ))
+            : agents.map((a) => (
+                <div
+                  key={a._id}
+                  onClick={() => loadAgent(a._id)}
+                  className={`group flex items-center gap-3 px-3 py-3 rounded-xl cursor-pointer transition-colors ${
+                    activeId === a._id
+                      ? "bg-blue-500/15 border border-blue-500/30"
+                      : "hover:bg-white/5 border border-transparent"
+                  }`}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/30 to-purple-600/30 border border-white/10 flex items-center justify-center text-lg shrink-0">
+                    {a.emoji}
                   </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{a.name}</p>
+                      {a.pinned && <span className="text-[10px] text-yellow-500">★</span>}
+                    </div>
+                    <p className="text-[10px] text-gray-500 truncate">
+                      {a.role} · {a.messageCount} msgs
+                    </p>
+                    {a.lastMessage && (
+                      <p className="text-[10px] text-gray-600 truncate mt-0.5">
+                        {a.lastRole === "assistant" ? `${a.emoji} ` : "You: "}
+                        {a.lastMessage}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(a._id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-400/10 flex items-center justify-center text-xs transition-all shrink-0"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
+          {!loading && agents.length === 0 && (
+            <div className="text-center py-12 space-y-3">
+              <p className="text-3xl">🤖</p>
+              <p className="text-xs text-gray-500">No agents yet</p>
+              <button
+                onClick={() => setShowNew(true)}
+                className="text-xs text-blue-400 hover:text-blue-300"
+              >
+                Create your first agent
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* ── Main area ── */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <div className="px-4 py-2.5 border-b border-white/10 flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => setSidebar(!sidebar)}
+            className="sm:hidden w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-sm"
+          >
+            ☰
+          </button>
+
+          {activeAgent ? (
+            <>
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500/30 to-purple-600/30 border border-white/10 flex items-center justify-center text-lg">
+                {activeAgent.emoji}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold truncate">{activeAgent.name}</h3>
+                <p className="text-[10px] text-gray-500 truncate">{activeAgent.role} · {activeAgent.model}</p>
+              </div>
+              <select
+                value={activeAgent.model}
+                onChange={(e) => handleModelChange(e.target.value)}
+                className="hidden sm:block px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] focus:outline-none"
+              >
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.ctx})
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleClear}
+                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-xs transition-colors"
+                title="Clear conversation"
+              >
+                🗑
+              </button>
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-xs transition-colors"
+                title="Agent settings"
+              >
+                ⚙
+              </button>
+            </>
+          ) : (
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-gray-400">Agent Office</h3>
+              <p className="text-[10px] text-gray-600">Select or create an agent to start chatting</p>
+            </div>
+          )}
+        </div>
+
+        {/* Settings panel */}
+        {showSettings && activeAgent && (
+          <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] space-y-3">
+            <div className="grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_1fr] gap-2">
+              <input
+                value={activeAgent.emoji}
+                onChange={(e) => setActiveAgent((p) => p ? { ...p, emoji: e.target.value } : p)}
+                className="w-12 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-center text-lg focus:outline-none focus:border-blue-500"
+                maxLength={4}
+              />
+              <input
+                value={activeAgent.name}
+                onChange={(e) => setActiveAgent((p) => p ? { ...p, name: e.target.value } : p)}
+                className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-blue-500"
+                placeholder="Agent name"
+              />
+              <input
+                value={activeAgent.role}
+                onChange={(e) => setActiveAgent((p) => p ? { ...p, role: e.target.value } : p)}
+                className="col-span-2 sm:col-span-1 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-blue-500"
+                placeholder="Role"
+              />
+            </div>
+            <textarea
+              value={activeAgent.systemPrompt}
+              onChange={(e) => setActiveAgent((p) => p ? { ...p, systemPrompt: e.target.value } : p)}
+              rows={3}
+              className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs placeholder:text-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+              placeholder="System prompt — defines how this agent behaves..."
+            />
+            <div className="flex items-center gap-2 justify-end">
+              <button
+                onClick={() => setShowSettings(false)}
+                className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveSettings}
+                className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-medium transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+          {!activeId ? (
+            <div className="h-full flex flex-col items-center justify-center gap-4">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-600/20 border border-white/10 flex items-center justify-center text-4xl">
+                🤖
+              </div>
+              <div className="text-center">
+                <p className="text-gray-300 font-semibold text-lg">Agent Office</p>
+                <p className="text-xs text-gray-500 mt-1 max-w-xs">
+                  Create agents with custom personas and chat with them using Moonshot AI
+                </p>
+              </div>
+              <button
+                onClick={() => setShowNew(true)}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-medium transition-colors"
+              >
+                Create Agent
+              </button>
+            </div>
+          ) : messages.length === 0 && !streaming ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-2">
+              <span className="text-4xl">{activeAgent?.emoji}</span>
+              <p className="text-sm font-medium text-gray-400">{activeAgent?.name}</p>
+              <p className="text-xs text-gray-600">{activeAgent?.role} · {activeAgent?.model}</p>
+              <p className="text-[10px] text-gray-700 mt-2">Send a message to start chatting</p>
+            </div>
+          ) : (
+            <>
+              {messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={`flex gap-3 ${msg.role === "user" ? "justify-end" : ""}`}
+                >
+                  {msg.role === "assistant" && (
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500/30 to-purple-600/30 border border-white/10 flex items-center justify-center text-sm shrink-0">
+                      {activeAgent?.emoji || "🤖"}
+                    </div>
+                  )}
+                  <div
+                    className={`max-w-[85%] sm:max-w-[70%] px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap break-words leading-relaxed ${
+                      msg.role === "user"
+                        ? "bg-blue-600 text-white rounded-br-md"
+                        : "bg-white/5 border border-white/10 text-gray-200 rounded-bl-md"
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+                  {msg.role === "user" && (
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500/30 to-teal-600/30 border border-white/10 flex items-center justify-center text-sm shrink-0">
+                      👤
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {streaming && (
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500/30 to-purple-600/30 border border-white/10 flex items-center justify-center text-sm shrink-0 animate-pulse">
+                    {activeAgent?.emoji || "🤖"}
+                  </div>
+                  <div className="max-w-[85%] sm:max-w-[70%] px-4 py-2.5 rounded-2xl rounded-bl-md bg-white/5 border border-white/10 text-sm text-gray-200 whitespace-pre-wrap break-words leading-relaxed">
+                    {streamText || (
+                      <span className="text-gray-500 animate-pulse">Thinking...</span>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div ref={endRef} />
+            </>
+          )}
+        </div>
+
+        {/* Input */}
+        {activeId && (
+          <div className="px-4 py-3 border-t border-white/10 shrink-0">
+            <div className="flex items-end gap-2">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder={`Message ${activeAgent?.name || "agent"}...`}
+                rows={1}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm placeholder:text-gray-600 focus:outline-none focus:border-blue-500/50 resize-none max-h-32"
+                style={{ minHeight: "42px" }}
+              />
+              {streaming ? (
+                <button
+                  onClick={handleStop}
+                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-sm font-medium transition-colors shrink-0"
+                >
+                  Stop
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={!input.trim()}
+                  className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-medium transition-colors shrink-0"
+                >
+                  Send
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── New Agent Modal ── */}
+      {showNew && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-[#111827] border border-white/10 overflow-hidden">
+            <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+              <h3 className="font-bold text-sm">New Agent</h3>
+              <button
+                onClick={() => setShowNew(false)}
+                className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-gray-400"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex gap-2">
+                <div>
+                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1.5">
+                    Emoji
+                  </label>
+                  <input
+                    value={newEmoji}
+                    onChange={(e) => setNewEmoji(e.target.value)}
+                    className="w-14 px-2 py-2 rounded-lg bg-white/5 border border-white/10 text-center text-lg focus:outline-none focus:border-blue-500"
+                    maxLength={4}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1.5">
+                    Name
+                  </label>
+                  <input
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="e.g. Kimi, Atlas, Nova..."
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-blue-500"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1.5">
+                  Role
+                </label>
+                <input
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value)}
+                  placeholder="e.g. Code Assistant, Writing Coach, Data Analyst..."
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1.5">
+                  Model
+                </label>
+                <select
+                  value={newModel}
+                  onChange={(e) => setNewModel(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-blue-500"
+                >
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.ctx})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1.5">
+                  System Prompt (optional)
+                </label>
+                <textarea
+                  value={newPrompt}
+                  onChange={(e) => setNewPrompt(e.target.value)}
+                  rows={3}
+                  placeholder="Define how this agent should behave..."
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm placeholder:text-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              <button
+                onClick={handleCreate}
+                disabled={!newName.trim()}
+                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+              >
+                Create Agent
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

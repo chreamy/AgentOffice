@@ -10,6 +10,7 @@ import messagesRouter from "./routes/messages.js";
 import analyticsRouter from "./routes/analytics.js";
 import memoryRouter from "./routes/memory.js";
 import streamRouter from "./routes/stream.js";
+import chatRouter from "./routes/chat.js";
 
 const PORT = process.env.PORT || 4000;
 
@@ -27,6 +28,7 @@ app.use("/api/messages", messagesRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/memory", memoryRouter);
 app.use("/api/stream", streamRouter);
+app.use("/api/chat", chatRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {

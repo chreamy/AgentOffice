@@ -68,7 +68,29 @@ const MemorySchema = new Schema(
   { timestamps: true }
 );
 
+// ─── Chat Sessions (Kimi API) ──────────────────────────────────────────────
+const ChatMessageSchema = new Schema({
+  role: { type: String, enum: ["system", "user", "assistant"], required: true },
+  content: { type: String, required: true },
+}, { _id: false });
+
+const ChatSessionSchema = new Schema(
+  {
+    title: { type: String, default: "New Chat" },
+    agentId: { type: String, default: "" },
+    agentName: { type: String, default: "" },
+    agentEmoji: { type: String, default: "" },
+    model: { type: String, default: "kimi-k2.5" },
+    systemPrompt: { type: String, default: "" },
+    messages: [ChatMessageSchema],
+    pinned: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+
 export const Task     = models.Task     || model("Task",     TaskSchema);
 export const Activity = models.Activity || model("Activity", ActivitySchema);
 export const Message  = models.Message  || model("Message",  MessageSchema);
 export const Memory   = models.Memory   || model("Memory",   MemorySchema);
+export const ChatSession =
+  models.ChatSession || model("ChatSession", ChatSessionSchema);

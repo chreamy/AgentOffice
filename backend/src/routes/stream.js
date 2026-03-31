@@ -1,8 +1,6 @@
 import { Router } from "express";
 import { AGENTS, buildAgent } from "./agents.js";
-import { Task } from "../models.js";
-import { Activity } from "../models.js";
-import { Message } from "../models.js";
+import { Task, Activity, Message } from "../models.js";
 
 const router = Router();
 

@@ -9,7 +9,7 @@ const LINKS = [
   { href: "/agents", icon: "🤖", label: "Agents" },
   { href: "/tasks", icon: "✅", label: "Tasks" },
   { href: "/activity", icon: "📡", label: "Activity" },
-  { href: "/collab", icon: "💬", label: "Chat" },
+  { href: "/chat", icon: "🌙", label: "Kimi Chat" },
 ];
 
 export function Nav() {

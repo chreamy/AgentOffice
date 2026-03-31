@@ -1,127 +1,146 @@
-import { Router } from "express";
-import { AgentStatus } from "../models.js";
+import express from "express";
 import fs from "fs";
 import path from "path";
 
-const router = Router();
+const router = express.Router();
 
-const DEFAULT_AGENTS = [
-  {
-    agentId: "kiyo",
-    name: "Kiyo",
-    emoji: "🦾",
-    role: "CEO & Chief Orchestrator",
-    status: "idle",
-    location: "Command Center",
-    currentTask: "Available",
-    workspace: "/root/.openclaw/workspace",
-  },
-  {
-    agentId: "arch",
-    name: "Arch",
-    emoji: "🏗️",
-    role: "Senior Developer & System Architect",
-    status: "idle",
-    location: "Engineering Bay",
-    currentTask: "Available",
-    workspace: "/root/.openclaw/workspace-leads",
-  },
-  {
-    agentId: "nova",
-    name: "Nova",
-    emoji: "✨",
-    role: "Creative Director & UX Lead",
-    status: "idle",
-    location: "Design Studio",
-    currentTask: "Available",
-    workspace: "",
-  },
-  {
-    agentId: "atlas",
-    name: "Atlas",
-    emoji: "🌐",
-    role: "Research Lead & Knowledge Curator",
-    status: "idle",
-    location: "Knowledge Library",
-    currentTask: "Available",
-    workspace: "",
-  },
-  {
-    agentId: "echo",
-    name: "Echo",
-    emoji: "📊",
-    role: "Data Analyst & Reporting Specialist",
-    status: "idle",
-    location: "Analytics Lab",
-    currentTask: "Available",
-    workspace: "",
-  },
+const AGENTS = [
+  { agentId: "main",    name: "Kiyo", emoji: "🦾", role: "CEO & Chief Orchestrator",        workspace: "/root/.openclaw/workspace",         sessionDir: "/root/.openclaw/agents/main/sessions" },
+  { agentId: "leads",   name: "Vex",  emoji: "💼", role: "VP of Sales & Business Development", workspace: "/root/.openclaw/workspace-leads",    sessionDir: "/root/.openclaw/agents/leads/sessions" },
+  { agentId: "it",      name: "Arch", emoji: "🏗️", role: "CTO & Senior Systems Engineer",   workspace: "/root/.openclaw/workspace-it",       sessionDir: "/root/.openclaw/agents/it/sessions" },
+  { agentId: "finance", name: "Nova", emoji: "📊", role: "CFO & Operations Lead",            workspace: "/root/.openclaw/workspace-finance",  sessionDir: "/root/.openclaw/agents/finance/sessions" },
+  { agentId: "growth",  name: "Rex",  emoji: "🚀", role: "Chief Growth Officer",             workspace: "/root/.openclaw/workspace-growth",   sessionDir: "/root/.openclaw/agents/growth/sessions" },
 ];
 
-function getWorkspaceContext(workspacePath) {
-  if (!workspacePath) return null;
+function readFileSafe(filePath) {
+  try { return fs.readFileSync(filePath, "utf8"); } catch { return null; }
+}
+
+function getLastSessionActivity(sessionDir) {
   try {
-    const memoryDir = path.join(workspacePath, "memory");
-    const today = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-
-    let recentMemory = "";
-    for (const date of [today, yesterday]) {
-      const filePath = path.join(memoryDir, `${date}.md`);
-      if (fs.existsSync(filePath)) {
-        recentMemory += fs.readFileSync(filePath, "utf8").slice(0, 500);
-        break;
-      }
+    const sessionsJson = path.join(sessionDir, "sessions.json");
+    const data = JSON.parse(fs.readFileSync(sessionsJson, "utf8"));
+    let latest = 0;
+    for (const session of Object.values(data)) {
+      if (session.updatedAt && session.updatedAt > latest) latest = session.updatedAt;
     }
+    return latest ? new Date(latest).toISOString() : null;
+  } catch { return null; }
+}
 
-    const memoryMd = path.join(workspacePath, "MEMORY.md");
-    const longTerm = fs.existsSync(memoryMd)
-      ? fs.readFileSync(memoryMd, "utf8").slice(0, 500)
-      : "";
+function getLastMemory(workspace) {
+  try {
+    const memDir = path.join(workspace, "memory");
+    if (!fs.existsSync(memDir)) return null;
+    const files = fs.readdirSync(memDir)
+      .filter(f => f.endsWith(".md") && /^\d{4}-\d{2}-\d{2}/.test(f))
+      .sort().reverse();
+    if (!files.length) return null;
+    const content = fs.readFileSync(path.join(memDir, files[0]), "utf8");
+    // Extract first meaningful line after headers
+    const lines = content.split("\n").filter(l => l.trim() && !l.startsWith("#") && !l.startsWith("---"));
+    return lines[0]?.slice(0, 120) || null;
+  } catch { return null; }
+}
 
-    return { recentMemory, longTerm };
-  } catch {
-    return null;
-  }
+function getHeartbeatState(workspace) {
+  try {
+    const f = path.join(workspace, "memory", "heartbeat-state.json");
+    return JSON.parse(fs.readFileSync(f, "utf8"));
+  } catch { return null; }
+}
+
+function deriveStatus(agentId, lastSeen) {
+  if (!lastSeen) return "idle";
+  const secondsAgo = (Date.now() - new Date(lastSeen).getTime()) / 1000;
+  // Active in last 3 minutes = working
+  if (secondsAgo < 180) return "working";
+  // Active in last 10 minutes = researching
+  if (secondsAgo < 600) return "researching";
+  // Active in last hour = idle but recent
+  return "idle";
+}
+
+function getIdentityField(workspace, field) {
+  const content = readFileSafe(path.join(workspace, "IDENTITY.md"));
+  if (!content) return null;
+  const match = content.match(new RegExp(`\\*\\*${field}:\\*\\*\\s*(.+)`));
+  return match ? match[1].trim() : null;
 }
 
 router.get("/", async (_req, res) => {
   try {
-    const count = await AgentStatus.countDocuments();
-    if (count === 0) {
-      await AgentStatus.insertMany(DEFAULT_AGENTS);
-    }
+    const agents = AGENTS.map(agent => {
+      const lastSeen = getLastSessionActivity(agent.sessionDir);
+      const status = deriveStatus(agent.agentId, lastSeen);
+      const lastMemory = getLastMemory(agent.workspace);
+      const heartbeat = getHeartbeatState(agent.workspace);
 
-    const agents = await AgentStatus.find({}).sort({ agentId: 1 });
+      // Read SOUL.md for current task hint
+      const soul = readFileSafe(path.join(agent.workspace, "SOUL.md"));
+      const memory = readFileSafe(path.join(agent.workspace, "MEMORY.md"));
 
-    const enriched = agents.map((a) => ({
-      ...a.toObject(),
-      workspaceContext: getWorkspaceContext(a.workspace),
-    }));
+      // Check for active HEARTBEAT.md tasks
+      const heartbeatMd = readFileSafe(path.join(agent.workspace, "HEARTBEAT.md"));
+      const currentTask = heartbeatMd
+        ? heartbeatMd.split("\n").find(l => l.startsWith("- ") || l.startsWith("* "))?.replace(/^[-*]\s*/, "").slice(0, 100) || "Standing by"
+        : "Standing by";
 
-    res.json({ success: true, agents: enriched });
+      return {
+        agentId: agent.agentId,
+        name: agent.name,
+        emoji: agent.emoji,
+        role: agent.role,
+        status,
+        lastSeen: lastSeen || new Date(0).toISOString(),
+        currentTask,
+        location: {
+          main: "Command Center",
+          leads: "Sales Floor",
+          it: "Engineering Bay",
+          finance: "Finance Office",
+          growth: "Growth Lab",
+        }[agent.agentId] || "Office",
+        workspace: agent.workspace,
+        lastMemoryNote: lastMemory,
+        hasHeartbeat: !!heartbeatMd,
+        heartbeatLastCheck: heartbeat?.lastChecks || null,
+        uptime: "99.9%",
+        tasksCompleted: 0,
+        responseTime: "~2s",
+      };
+    });
+
+    res.json({ success: true, agents });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 router.patch("/", async (req, res) => {
   try {
-    const { agentId, ...updates } = req.body;
-    if (!agentId)
-      return res.status(400).json({ error: "agentId required" });
+    const { agentId, status, currentTask, location } = req.body;
+    if (!agentId) return res.status(400).json({ error: "agentId required" });
 
-    updates.lastSeen = new Date();
+    // Write status to a lightweight state file per agent
+    const agent = AGENTS.find(a => a.agentId === agentId);
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
 
-    const agent = await AgentStatus.findOneAndUpdate(
-      { agentId },
-      { $set: updates },
-      { new: true, upsert: true }
-    );
+    const stateFile = path.join(agent.workspace, "memory", ".agent-office-state.json");
+    let state = {};
+    try { state = JSON.parse(fs.readFileSync(stateFile, "utf8")); } catch {}
 
-    res.json({ success: true, agent });
+    if (status) state.status = status;
+    if (currentTask) state.currentTask = currentTask;
+    if (location) state.location = location;
+    state.lastUpdated = new Date().toISOString();
+
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+
+    res.json({ success: true, agentId, state });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { AgentStatus, Task, Activity, Message } from "../models.js";
+import { Task, Activity, Message } from "../models.js";
+import { getAgentsFromWorkspace } from "../agents.js";
 
 const router = Router();
 
@@ -23,8 +24,10 @@ router.get("/", (req, res) => {
   const poll = async () => {
     if (closed) return;
     try {
-      const [agents, tasks, activities, messages] = await Promise.all([
-        AgentStatus.find({}).sort({ agentId: 1 }).lean(),
+      // Agents come from OpenClaw workspace files, not MongoDB
+      const agents = getAgentsFromWorkspace();
+
+      const [tasks, activities, messages] = await Promise.all([
         Task.find({}).sort({ createdAt: -1 }).limit(100).lean(),
         Activity.find({}).sort({ createdAt: -1 }).limit(50).lean(),
         Message.find({ channel: "general" })

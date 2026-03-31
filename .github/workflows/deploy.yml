@@ -19,5 +19,11 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: 22
           script_stop: true
+          envs: MONGODB_URI,NEXT_PUBLIC_API_URL
           script: |
+            # Write envs in case they're missing on server
+            echo "MONGODB_URI=${{ secrets.MONGODB_URI }}" > /root/.openclaw/workspace-leads/agent-office/backend/.env
+            echo "MONGODB_DB=agent_office" >> /root/.openclaw/workspace-leads/agent-office/backend/.env
+            echo "NEXT_PUBLIC_API_URL=http://${{ secrets.DEPLOY_HOST }}:4000" > /root/.openclaw/workspace-leads/agent-office/frontend/.env.local
+
             bash /root/.openclaw/workspace-leads/agent-office/scripts/deploy.sh

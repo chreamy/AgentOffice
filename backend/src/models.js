@@ -2,94 +2,75 @@ import mongoose from "mongoose";
 
 const { Schema, model, models } = mongoose;
 
-// ─── Tasks (clean schema per spec) ──────────────────────────────────────────
-const TaskSchema = new Schema(
-  {
-    title:       { type: String, required: true },
-    description: { type: String, default: "" },
-    status: {
-      type: String,
-      enum: ["queued", "in-progress", "done"],
-      default: "queued",
-    },
-    priority: {
-      type: String,
-      enum: ["P0", "P1", "P2", "P3"],
-      default: "P2",
-    },
-    // Agent who claimed / is working on this task
-    agentName:   { type: String, default: "" },
-    agentId:     { type: String, default: "" },
-    agentEmoji:  { type: String, default: "" },
-    // Timestamps for lifecycle
-    queuedAt:    { type: Date, default: Date.now },
-    startedAt:   { type: Date, default: null },
-    completedAt: { type: Date, default: null },
-    dueDate:     { type: String, default: "" },
-  },
-  { timestamps: true }
-);
-
-// ─── Activity Events ─────────────────────────────────────────────────────────
-const ActivitySchema = new Schema(
-  {
-    type:       { type: String, enum: ["success", "warning", "info", "error"], default: "info" },
-    agentId:    { type: String, required: true },
-    agentName:  { type: String, required: true },
-    agentEmoji: { type: String, default: "" },
-    message:    { type: String, required: true },
-    metadata:   { type: String, default: "" },
-    taskId:     { type: String, default: "" },
-  },
-  { timestamps: true }
-);
-
-// ─── Messages ─────────────────────────────────────────────────────────────────
-const MessageSchema = new Schema(
-  {
-    sender:      { type: String, required: true },
-    senderId:    { type: String, required: true },
-    senderEmoji: { type: String, default: "" },
-    content:     { type: String, required: true },
-    channel:     { type: String, default: "general" },
-    type:        { type: String, enum: ["text", "file", "task"], default: "text" },
-  },
-  { timestamps: true }
-);
-
-// ─── Memory Notes ─────────────────────────────────────────────────────────────
-const MemorySchema = new Schema(
-  {
-    agentId:    { type: String, required: true },
-    date:       { type: String, required: true },
-    content:    { type: String, required: true },
-    isLongTerm: { type: Boolean, default: false },
-  },
-  { timestamps: true }
-);
-
-// ─── Chat Sessions (Agents = Kimi chat sessions) ───────────────────────────
+// ─── Chat Messages (shared sub-schema) ──────────────────────────────────────
 const ChatMessageSchema = new Schema({
-  role: { type: String, enum: ["system", "user", "assistant"], required: true },
+  role:    { type: String, enum: ["system", "user", "assistant"], required: true },
   content: { type: String, required: true },
-}, { _id: false });
+  thinking:    { type: String, default: "" },
+  tokensIn:    { type: Number, default: 0 },
+  tokensOut:   { type: Number, default: 0 },
+  responseMs:  { type: Number, default: 0 },
+}, { _id: false, timestamps: true });
 
-const ChatSessionSchema = new Schema(
+// ─── Agents (= chat personas with conversations) ───────────────────────────
+const AgentSchema = new Schema(
   {
-    name: { type: String, default: "New Agent" },
-    emoji: { type: String, default: "🤖" },
-    role: { type: String, default: "Assistant" },
-    model: { type: String, default: "kimi-k2.5" },
+    name:         { type: String, default: "New Agent" },
+    emoji:        { type: String, default: "🤖" },
+    role:         { type: String, default: "Assistant" },
+    // Model config
+    provider:     { type: String, default: "moonshot" },
+    model:        { type: String, default: "kimi-k2.5" },
+    // Persona / system
     systemPrompt: { type: String, default: "" },
-    messages: [ChatMessageSchema],
-    pinned: { type: Boolean, default: false },
+    soul:         { type: String, default: "" },
+    identity:     { type: String, default: "" },
+    // Memory
+    memory:       { type: String, default: "" },
+    memoryNotes:  [{ date: String, content: String }],
+    // Status
+    pinned:       { type: Boolean, default: false },
+    lastActive:   { type: Date, default: Date.now },
+    totalTokensIn:  { type: Number, default: 0 },
+    totalTokensOut: { type: Number, default: 0 },
+    totalMessages:  { type: Number, default: 0 },
+    totalCost:      { type: Number, default: 0 },
   },
   { timestamps: true }
 );
 
-export const Task     = models.Task     || model("Task",     TaskSchema);
-export const Activity = models.Activity || model("Activity", ActivitySchema);
-export const Message  = models.Message  || model("Message",  MessageSchema);
-export const Memory   = models.Memory   || model("Memory",   MemorySchema);
-export const ChatSession =
-  models.ChatSession || model("ChatSession", ChatSessionSchema);
+// ─── Conversations (multiple per agent) ─────────────────────────────────────
+const ConversationSchema = new Schema(
+  {
+    agentId:  { type: Schema.Types.ObjectId, ref: "Agent", required: true },
+    title:    { type: String, default: "New Conversation" },
+    messages: [ChatMessageSchema],
+    pinned:   { type: Boolean, default: false },
+    archived: { type: Boolean, default: false },
+    // Analytics per conversation
+    tokensIn:   { type: Number, default: 0 },
+    tokensOut:  { type: Number, default: 0 },
+    cost:       { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
+// ─── Provider Config (user-configured LLM providers) ────────────────────────
+const ProviderSchema = new Schema(
+  {
+    name:     { type: String, required: true, unique: true },
+    label:    { type: String, default: "" },
+    baseUrl:  { type: String, required: true },
+    apiKey:   { type: String, default: "" },
+    models:   [{ id: String, name: String, ctx: String }],
+    enabled:  { type: Boolean, default: true },
+    // Failover
+    cooldownUntil: { type: Date, default: null },
+    failCount:     { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
+export const Agent        = models.Agent        || model("Agent",        AgentSchema);
+export const Conversation = models.Conversation || model("Conversation", ConversationSchema);
+export const Provider     = models.Provider     || model("Provider",     ProviderSchema);
